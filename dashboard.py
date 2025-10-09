@@ -142,6 +142,9 @@ def load_data(dossier_path):
     adherents_ignores = 0
     fichiers_erreur = []
 
+    # Dictionnaire pour dédupliquer les adhérents par codeAdherent
+    adherents_uniques = {}
+
     # Charger le mapping des structures (uniquement les groupes)
     structure_mapping_path = os.path.join(dossier_path, "structure.json")
     structure_mapping = load_structures_mapping(structure_mapping_path)
@@ -150,6 +153,7 @@ def load_data(dossier_path):
         st.error(f"Le dossier spécifié n'existe pas : {dossier_path}")
         return result, fichiers_traites, adherents_traites, adherents_ignores, structure_mapping, fichiers_erreur
 
+    # PREMIÈRE PASSE : Collecter tous les adhérents uniques
     for filepath in glob.glob(os.path.join(dossier_path, "*.json")):
         # Ignorer le fichier structure.json
         if os.path.basename(filepath) == "structure.json":
@@ -178,113 +182,108 @@ def load_data(dossier_path):
 
                 fichiers_traites += 1
 
-                # Dictionnaire pour regrouper les adhérents par codeAdherent
-                adherents_grouped = defaultdict(list)
-
                 for adherent in data.get("adherents", []):
                     code_adherent = adherent.get("codeAdherent")
-                    adherents_grouped[code_adherent].append(adherent)
 
-                for adherents in adherents_grouped.values():
-                    # Fusionner les informations des adhérents ayant le même codeAdherent
-                    merged_adherent = {
-                        "codeAdherent": adherents[0].get("codeAdherent"),
-                        "branche": adherents[0].get("branche"),
-                        "codeGroupe": adherents[0].get("codeGroupe"),
-                        "codeStructure": adherents[0].get("codeStructure"),
-                        "nomStructure": adherents[0].get("nomStructure", "Non spécifié"),
-                        "fonction": adherents[0].get("fonction"),
-                        "status": adherents[0].get("status", "ADHERENT"),
-                        "prenom": adherents[0].get("prenom", ""),
-                        "nom": adherents[0].get("nom", ""),
-                        "diplomeJS": adherents[0].get("diplomeJS"),
-                        "qualificationDir": adherents[0].get("qualificationDir"),
-                        "appro": adherents[0].get("appro"),
-                        "tech": adherents[0].get("tech"),
-                        "apf": adherents[0].get("apf")
-                    }
-
-                    branche = merged_adherent.get("branche")
-                    code_groupe = merged_adherent.get("codeGroupe")
-                    code_structure = merged_adherent.get("codeStructure")
-                    nom_structure = merged_adherent.get("nomStructure", "Non spécifié")
-                    fonction = merged_adherent.get("fonction")
-                    status = merged_adherent.get("status", "ADHERENT")
-
-                    # Utiliser codeStructure au lieu de codeGroupe
-                    if branche and fonction and code_structure:
-                        # Normaliser la fonction avant de l'enregistrer
-                        fonction_normalisee = normalize_fonction(fonction)
-
-                        # S'assurer que la structure existe
-                        if fonction_normalisee not in result[branche][code_structure]['functions']:
-                            result[branche][code_structure]['functions'][fonction_normalisee] = status_dict_factory()
-
-                        # Compter en fonction du statut
-                        if status in ["ADHERENT", "PREINSCRIT"]:
-                            result[branche][code_structure]['functions'][fonction_normalisee][status] += 1
+                    if code_adherent:
+                        # Si c'est la première fois qu'on voit cet adhérent, on le stocke
+                        if code_adherent not in adherents_uniques:
+                            adherents_uniques[code_adherent] = adherent
                         else:
-                            result[branche][code_structure]['functions'][fonction_normalisee]['ADHERENT'] += 1
+                            # Sinon, on fusionne les informations (priorité aux valeurs non vides)
+                            adherent_existant = adherents_uniques[code_adherent]
 
-                        # Stocker le nom de structure
-                        if 'nom_structure' not in result[branche][code_structure]:
-                            result[branche][code_structure]['nom_structure'] = nom_structure
-
-                        adherents_traites += 1
-
-                        is_chef = (
-                                fonction.lower().startswith("chef")
-                                or fonction.lower().startswith("responsable")
-                                or fonction.lower().startswith("compagnon")
-                                or fonction.lower().startswith("accompagnateur")
-                        )
-
-                        if is_chef:
-                            prenom = (
-                                    merged_adherent.get("prenom", "").capitalize()
-                                    + " "
-                                    + merged_adherent.get("nom", "").capitalize()
-                            )
-
-                            # Déterminer le diplôme JS
-                            diplomJS = "-"
-                            if (
-                                    merged_adherent.get('diplomeJS') == "Scout Dir"
-                                    or (
-                                    merged_adherent.get('qualificationDir')
-                                    and isinstance(merged_adherent.get('qualificationDir'), dict)
-                                    and "directeur" in merged_adherent.get('qualificationDir').get('type', '').lower()
-                            )
-                            ):
-                                diplomJS = "Directeur"
-                            elif merged_adherent.get('appro'):
-                                diplomJS = "Appro"
-                            elif merged_adherent.get('tech'):
-                                diplomJS = "Tech"
-                            elif merged_adherent.get('apf'):
-                                diplomJS = "APF"
-
-                            # Compter les diplômes par fonction pour cette structure
-                            result[branche][code_structure]['diplomes'][fonction_normalisee][diplomJS] += 1
-
-                            result[branche][code_structure]['chefs'].append({
-                                "prenom": prenom,
-                                "diplomeJS": diplomJS,
-                                "status": status,
-                                "fonction": fonction_normalisee,
-                                "codeStructure": code_structure,
-                                "nomStructure": nom_structure,
-                                "codeGroupe": code_groupe
-                            })
+                            # Fusionner les champs (priorité aux valeurs non vides/non nulles)
+                            for key, value in adherent.items():
+                                if value and not adherent_existant.get(key):
+                                    adherent_existant[key] = value
                     else:
-                        adherents_ignores += 1
+                        # Si pas de codeAdherent, on traite l'adhérent normalement (sans fusion)
+                        adherents_uniques[id(adherent)] = adherent
 
         except Exception as e:
             fichiers_erreur.append(f"{os.path.basename(filepath)} ({str(e)})")
             continue
 
-    return result, fichiers_traites, adherents_traites, adherents_ignores, structure_mapping, fichiers_erreur
+    # DEUXIÈME PASSE : Traiter les adhérents uniques
+    for code_adherent, adherent in adherents_uniques.items():
+        branche = adherent.get("branche")
+        code_groupe = adherent.get("codeGroupe")
+        code_structure = adherent.get("codeStructure")
+        nom_structure = adherent.get("nomStructure", "Non spécifié")
+        fonction = adherent.get("fonction")
+        status = adherent.get("status", "ADHERENT")
 
+        # Utiliser codeStructure au lieu de codeGroupe
+        if branche and fonction and code_structure:
+            # Normaliser la fonction avant de l'enregistrer
+            fonction_normalisee = normalize_fonction(fonction)
+
+            # S'assurer que la structure existe
+            if fonction_normalisee not in result[branche][code_structure]['functions']:
+                result[branche][code_structure]['functions'][fonction_normalisee] = status_dict_factory()
+
+            # Compter en fonction du statut
+            if status in ["ADHERENT", "PREINSCRIT"]:
+                result[branche][code_structure]['functions'][fonction_normalisee][status] += 1
+            else:
+                result[branche][code_structure]['functions'][fonction_normalisee]['ADHERENT'] += 1
+
+            # Stocker le nom de structure
+            if 'nom_structure' not in result[branche][code_structure]:
+                result[branche][code_structure]['nom_structure'] = nom_structure
+
+            adherents_traites += 1
+
+            is_chef = (
+                    fonction.lower().startswith("chef")
+                    or fonction.lower().startswith("responsable")
+                    or fonction.lower().startswith("compagnon")
+                    or fonction.lower().startswith("accompagnateur")
+            )
+
+            if is_chef:
+                prenom = (
+                        adherent.get("prenom", "").capitalize()
+                        + " "
+                        + adherent.get("nom", "").capitalize()
+                )
+
+                # Déterminer le diplôme JS
+                diplomJS = "-"
+                if (
+                        adherent.get('diplomeJS') == "Scout Dir"
+                        or (
+                        adherent.get('qualificationDir')
+                        and isinstance(adherent.get('qualificationDir'), dict)
+                        and "directeur" in adherent.get('qualificationDir').get('type', '').lower()
+                )
+                ):
+                    diplomJS = "Directeur"
+                elif adherent.get('appro'):
+                    diplomJS = "Appro"
+                elif adherent.get('tech'):
+                    diplomJS = "Tech"
+                elif adherent.get('apf'):
+                    diplomJS = "APF"
+
+                # Compter les diplômes par fonction pour cette structure
+                result[branche][code_structure]['diplomes'][fonction_normalisee][diplomJS] += 1
+
+                result[branche][code_structure]['chefs'].append({
+                    "prenom": prenom,
+                    "diplomeJS": diplomJS,
+                    "status": status,
+                    "fonction": fonction_normalisee,
+                    "codeStructure": code_structure,
+                    "nomStructure": nom_structure,
+                    "codeGroupe": code_groupe,
+                    "codeAdherent": adherent.get("codeAdherent", "N/A")  # Ajout du code adhérent pour débogage
+                })
+        else:
+            adherents_ignores += 1
+
+    return result, fichiers_traites, adherents_traites, adherents_ignores, structure_mapping, fichiers_erreur
 
 def highlight_row(row, cols_fonctions):
     """
