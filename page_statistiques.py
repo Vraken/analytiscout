@@ -26,9 +26,11 @@ def render_statistiques_page():
         st.error("❌ Vous devez être connecté pour accéder à cette page")
         return
 
+    userFolder=f'{DOSSIER_DATA}_{st.session_state.username}'
+
     # Charger les données
     with st.spinner("Chargement des données en cours..."):
-        data, fichiers_traites, adherents_traites, adherents_ignores, structure_mapping, fichiers_erreur = load_data(DOSSIER_DATA)
+        data, fichiers_traites, adherents_traites, adherents_ignores, structure_mapping, fichiers_erreur = load_data(userFolder)
 
     # Afficher les fichiers en erreur si présents
     if fichiers_erreur:
@@ -106,19 +108,7 @@ def render_statistiques_page():
     )
 
     # --- Affichage des résultats ---
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(f"**Groupes sélectionnés:** {len(groupe_selected)}")
 
-    # Métriques globales
-    if inclure_preinscrits:
-        total_adherents = int(df_functions_filtered['Nombre Total'].sum()) if not df_functions_filtered.empty else 0
-    else:
-        total_adherents = int(df_functions_filtered['Nombre Adherent'].sum()) if not df_functions_filtered.empty else 0
-
-    st.sidebar.metric("Total Adhérents", total_adherents)
-    st.sidebar.metric("Total Responsables", len(df_chefs_filtered))
-
-    st.sidebar.markdown("---")
 
     # === ONGLETS PAR BRANCHE ===
     if not df_functions_filtered.empty:
@@ -196,15 +186,15 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
         return
 
     # === TABLEAU DES FONCTIONS ===
-    st.markdown("### 📋 Données détaillées des fonctions")
+    st.markdown("### 📋 Effectifs par groupe")
 
     # Créer un dictionnaire pour stocker les données formatées par fonction
     data_formatted_fonctions = {}
     totaux_par_structure = {}
 
     for _, row in df_branche.iterrows():
-        nom_structure = row['Nom Structure']
-        fonction = row['Fonction']
+        nom_structure = row['Nom Structure'].strip()
+        fonction = row['Fonction'].strip()
         adherent = row['Nombre Adherent']
         preinscrit = row['Nombre Preinscrit']
 
@@ -400,6 +390,17 @@ def render_global_stats(df_functions_filtered: pd.DataFrame, df_chefs_filtered: 
             branche_summary = df_functions_filtered.groupby('Branche')['Nombre Adherent'].sum().sort_values(ascending=False)
         st.dataframe(branche_summary, use_container_width=True)
 
+    # Métriques globales
+    if inclure_preinscrits:
+        total_adherents = int(df_functions_filtered['Nombre Total'].sum()) if not df_functions_filtered.empty else 0
+    else:
+        total_adherents = int(df_functions_filtered['Nombre Adherent'].sum()) if not df_functions_filtered.empty else 0
+
+    st.metric("Total Adhérents", total_adherents)
+    st.metric("Total Responsables", len(df_chefs_filtered))
+
+
+
 
 # === FONCTIONS DE MISE EN FORME ===
 
@@ -432,9 +433,9 @@ def highlight_row(row, cols_fonctions) -> Tuple[List[str], List[str]]:
                 pass
 
         # Compter les responsables farfadet (Chef/Cheftaine pour les farfadets)
-        if 'Chef/Cheftaine' in cols_fonctions:
+        if 'RESPONSABLE FARFADET' in cols_fonctions:
             try:
-                val = str(row['Chef/Cheftaine'])
+                val = str(row['RESPONSABLE FARFADET'])
                 nb_chefs = int(val) if val.isdigit() else 0
             except:
                 pass
@@ -451,9 +452,9 @@ def highlight_row(row, cols_fonctions) -> Tuple[List[str], List[str]]:
                 pass
 
         # Compter les accompagnateurs compagnons (Chef/Cheftaine pour les compagnons)
-        if 'Chef/Cheftaine' in cols_fonctions:
+        if 'ACCOMPAGNATEUR COMPAGNON' in cols_fonctions:
             try:
-                val = str(row['Chef/Cheftaine'])
+                val = str(row['ACCOMPAGNATEUR COMPAGNON'])
                 nb_chefs = int(val) if val.isdigit() else 0
             except:
                 pass

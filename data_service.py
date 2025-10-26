@@ -138,9 +138,12 @@ def sort_branches(branches: List[str]) -> List[str]:
 
 
 # === CHARGEMENT DES DONNÉES ===
-
-@st.cache_data
+#
+# @st.cache_data
 def load_data(dossier_path: str) -> Tuple[Dict, int, int, int, Dict[str, str], List[str]]:
+
+    fetch_responsables(dossier_path)
+
     """Charge et traite les données JSON à partir d'un dossier spécifié."""
     result = defaultdict(nested_defaultdict_factory)
     fichiers_traites = 0
@@ -384,7 +387,7 @@ def iter_data(structures):
             yield from iter_data(node["children"])
 
 
-def fetchAll(data_structures, isYoung):
+def fetchAll(data_structures, isYoung, outputFolder):
     """Récupère toutes les données depuis l'API."""
     api = st.session_state.api_instance
     for data in iter_data(data_structures):
@@ -392,7 +395,7 @@ def fetchAll(data_structures, isYoung):
             continue
         labelPrefixYoung = 'jeunes' if isYoung else 'chefs'
         label = f"{labelPrefixYoung}_{data['nomStructure']} ({data['typeStructure']})".replace(" ", "_").replace("/", "_")
-        outputFile = f"data/{label}.json"
+        outputFile = f"{outputFolder}/{label}.json"
         if os.path.exists(outputFile):
             continue
         print(f"{data['nomStructure']} ({data['typeStructure']})")
@@ -400,7 +403,7 @@ def fetchAll(data_structures, isYoung):
         data_responsables = api.get_responsables(data, isYoung)
 
         if data_responsables:
-            st.success("✅ Données récupérées avec succès !")
+            st.toast(f"✅ Données récupérées avec succès : {label}")
 
             with open(outputFile, "w", encoding="utf-8") as outfile:
                 json.dump(data_responsables, outfile, indent=4, ensure_ascii=False)
@@ -410,8 +413,8 @@ def fetchAll(data_structures, isYoung):
         time.sleep(randint(1, 2))
 
 
-def fetch_responsables(code: int, nom: str, saison: int):
-    """Récupère et affiche les responsables"""
+def fetch_responsables(userFolder):
+    structureFile = f"{userFolder}/structure.json"
     api = st.session_state.api_instance
     structure = {
         "codeStructure": 119120000,
@@ -419,17 +422,21 @@ def fetch_responsables(code: int, nom: str, saison: int):
         "idSaison": 2026,
     }
 
-    if not os.path.exists("data/structure.json"):
+    if not os.path.exists(userFolder):
+        os.mkdir(userFolder)
+
+    if not os.path.exists(structureFile):
         print("Récupération des structures hiérarchiques...")
-        data_structures = api.get_structures_hierarchie(structure)
+        data_structures = api.get_structures_hierarchy(structure)
+        if data_structures:
+            with open(structureFile, "w", encoding="utf-8") as outfile:
+                json.dump(data_structures, outfile, indent=4, ensure_ascii=False)
+
         print("✓ Structures récupérées")
 
-    with open("data/structure.json", "r", encoding="utf-8") as file:
+    with open(structureFile, "r", encoding="utf-8") as file:
         data_structures = json.load(file)
-        if data_structures:
-            with open("data/structure.json", "w", encoding="utf-8") as outfile:
-                json.dump(data_structures, outfile, indent=4, ensure_ascii=False)
-        print("Récupération des responsables...")
 
-        fetchAll(data_structures, False)
-        fetchAll(data_structures, True)
+
+        fetchAll(data_structures, False, userFolder)
+        fetchAll(data_structures, True, userFolder)

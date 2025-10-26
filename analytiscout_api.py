@@ -13,7 +13,7 @@ class AnalytiscoutAPI:
     # URLs de l'API
     BASE_URL = "https://analytiscout.sgdf.fr"
     OAUTH_URL = f"{BASE_URL}/oauth2/authorization/oidc"
-    STRUCTURES_URL = f"{BASE_URL}/api/analytiscout/structures/structuresHie/true"
+    STRUCTURES_URL = f"{BASE_URL}/api/analytiscout/structures/structuresHie/false"
     RESPONSABLES_URL = f"{BASE_URL}/api/analytiscout/responsables"
 
     def __init__(self):
@@ -90,7 +90,7 @@ class AnalytiscoutAPI:
             "X-XSRF-TOKEN": self.session.cookies.get("XSRF-TOKEN"),
         }
 
-    def get_structures_hierarchie(self, code_structure: int, nom_structure: str, id_saison: int) -> Optional[Dict]:
+    def get_structures_hierarchy(self, structure) -> Optional[Dict]:
         """
         Récupère les structures hiérarchiques
 
@@ -106,14 +106,8 @@ class AnalytiscoutAPI:
             if not self._is_authenticated():
                 raise ValueError("Non authentifié")
 
-            structure = {
-                "codeStructure": code_structure,
-                "nomStructure": nom_structure,
-                "idSaison": id_saison,
-            }
-
             payload = {"structureFonctions": structure}
-
+            print(self.STRUCTURES_URL)
             response = self.session.post(
                 self.STRUCTURES_URL,
                 json=payload,
