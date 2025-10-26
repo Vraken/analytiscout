@@ -11,7 +11,7 @@ from data_service import (
     filter_dataframes,
     get_available_groupes,
     sort_branches,
-    fetch_responsables
+    fetch_responsables, clearAndReload
 )
 
 
@@ -26,7 +26,7 @@ def render_statistiques_page():
         st.error("❌ Vous devez être connecté pour accéder à cette page")
         return
 
-    userFolder=f'{DOSSIER_DATA}_{st.session_state.username}'
+    userFolder = getUserFolder()
 
     # Charger les données
     with st.spinner("Chargement des données en cours..."):
@@ -54,6 +54,9 @@ def render_statistiques_page():
     # --- Interface utilisateur Streamlit - SIDEBAR ---
     if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
         handle_logout()
+
+    if st.sidebar.button("🔄 Recharger tout", use_container_width=True):
+        clearAndReload(getUserFolder())
 
     # === OPTION POUR INCLURE LES PRÉINSCRITS ===
     st.sidebar.subheader("⚙️ Options d'affichage")
@@ -171,6 +174,11 @@ def render_statistiques_page():
 
     st.sidebar.markdown("---")
     st.sidebar.info("Application Streamlit v4.0 🚀")
+
+
+def getUserFolder():
+    userFolder = f'{DOSSIER_DATA}_{st.session_state.username}'
+    return userFolder
 
 
 def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,

@@ -11,7 +11,9 @@ from typing import Dict, Tuple, List, Set
 import pandas as pd
 import time
 from random import randint
+import shutil
 
+refFolder = "data"
 
 # === FACTORIES ===
 
@@ -388,6 +390,7 @@ def iter_data(structures):
 
 
 def fetchAll(data_structures, isYoung, outputFolder):
+
     """Récupère toutes les données depuis l'API."""
     api = st.session_state.api_instance
     for data in iter_data(data_structures):
@@ -396,22 +399,39 @@ def fetchAll(data_structures, isYoung, outputFolder):
         labelPrefixYoung = 'jeunes' if isYoung else 'chefs'
         label = f"{labelPrefixYoung}_{data['nomStructure']} ({data['typeStructure']})".replace(" ", "_").replace("/", "_")
         outputFile = f"{outputFolder}/{label}.json"
+        refOutputFile = f"{refFolder}/{label}.json"
         if os.path.exists(outputFile):
             continue
+        if os.path.exists(refOutputFile):
+            shutil.copy(refOutputFile,outputFile)
+            continue
+
         print(f"{data['nomStructure']} ({data['typeStructure']})")
         print(f"fetching {data}")
         data_responsables = api.get_responsables(data, isYoung)
 
         if data_responsables:
-            st.toast(f"✅ Données récupérées avec succès : {label}")
 
             with open(outputFile, "w", encoding="utf-8") as outfile:
                 json.dump(data_responsables, outfile, indent=4, ensure_ascii=False)
 
+            shutil.copy(outputFile, refOutputFile)
+
+
+            st.toast(f"✅ Données récupérées avec succès : {label}")
             print("✓ Responsables récupérés")
 
         time.sleep(randint(1, 2))
 
+def clearAndReload(userFolder):
+    if os.path.exists(userFolder):
+        shutil.rmtree(userFolder)
+        print(f"Dossier supprimé avec succès : {userFolder}")
+    if os.path.exists(refFolder):
+        shutil.rmtree(refFolder)
+        print(f"Dossier supprimé avec succès : {refFolder}")
+
+    fetch_responsables(userFolder)
 
 def fetch_responsables(userFolder):
     structureFile = f"{userFolder}/structure.json"
@@ -424,6 +444,9 @@ def fetch_responsables(userFolder):
 
     if not os.path.exists(userFolder):
         os.mkdir(userFolder)
+
+    if not os.path.exists(refFolder):
+        os.mkdir(refFolder)
 
     if not os.path.exists(structureFile):
         print("Récupération des structures hiérarchiques...")
