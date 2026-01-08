@@ -182,12 +182,18 @@ def getUserFolder():
 
 
 def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
-                          df_chefs_filtered: pd.DataFrame, inclure_preinscrits: bool):
+                           df_chefs_filtered: pd.DataFrame, inclure_preinscrits: bool):
     """Affiche le contenu complet d'une branche"""
 
     # Filtrer les données pour cette branche
     df_branche = df_functions_filtered[df_functions_filtered['Branche'] == branche].copy()
-    df_chefs_branche = df_chefs_filtered[df_chefs_filtered['Branche'] == branche]
+
+    df_branche['Nom Structure'] = df_branche['Nom Structure'].str.strip()
+
+    df_chefs_branche = df_chefs_filtered[df_chefs_filtered['Branche'] == branche].copy()
+
+    if not df_chefs_branche.empty:
+        df_chefs_branche['Nom Structure'] = df_chefs_branche['Nom Structure'].str.strip()
 
     if df_branche.empty:
         st.info(f"Aucune donnée disponible pour la branche {branche}")
@@ -201,7 +207,7 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
     totaux_par_structure = {}
 
     for _, row in df_branche.iterrows():
-        nom_structure = row['Nom Structure'].strip()
+        nom_structure = row['Nom Structure']
         fonction = row['Fonction'].strip()
         adherent = row['Nombre Adherent']
         preinscrit = row['Nombre Preinscrit']
@@ -228,8 +234,7 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
     # Combiner les DataFrames
     df_final = pd.concat([df_pivot_branche, diplomes_par_structure], axis=1)
 
-    # Ajouter la colonne TOTAL
-    df_final['TOTAL'] = df_final.index.map(lambda nom: str(totaux_par_structure[nom]))
+    df_final['TOTAL'] = df_final.index.map(totaux_par_structure).fillna(0).astype(int).astype(str)
 
     # Obtenir les colonnes de fonctions
     cols_fonctions = df_pivot_branche.columns.tolist()
