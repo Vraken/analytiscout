@@ -7,7 +7,7 @@ import os
 import glob
 import streamlit as st
 from collections import defaultdict
-from typing import Dict, Tuple, List, Set
+from typing import Dict, Tuple, List, Set, Any
 import pandas as pd
 import time
 from random import randint
@@ -408,7 +408,7 @@ def fetchAll(data_structures, isYoung, outputFolder):
 
         print(f"{data['nomStructure']} ({data['typeStructure']})")
         print(f"fetching {data}")
-        data_responsables = api.get_responsables(data, isYoung)
+        data_responsables = get_responsables(api, data, isYoung)
 
         if data_responsables:
 
@@ -422,6 +422,7 @@ def fetchAll(data_structures, isYoung, outputFolder):
             print("✓ Responsables récupérés")
 
         time.sleep(randint(1, 2))
+
 
 def clearAndReload(userFolder):
     if os.path.exists(userFolder):
@@ -450,7 +451,7 @@ def fetch_responsables(userFolder):
 
     if not os.path.exists(structureFile):
         print("Récupération des structures hiérarchiques...")
-        data_structures = api.get_structures_hierarchy(structure)
+        data_structures = get_structures_hierarchy(api, structure)
         if data_structures:
             with open(structureFile, "w", encoding="utf-8") as outfile:
                 json.dump(data_structures, outfile, indent=4, ensure_ascii=False)
@@ -463,3 +464,12 @@ def fetch_responsables(userFolder):
 
         fetchAll(data_structures, False, userFolder)
         fetchAll(data_structures, True, userFolder)
+
+@st.cache_data
+def get_structures_hierarchy(_api, structure: dict[str, int | str]) -> Any:
+    return _api.get_structures_hierarchy(structure)
+
+
+@st.cache_data
+def get_responsables(_api, data, isYoung) -> Any:
+    return _api.get_responsables(data, isYoung)

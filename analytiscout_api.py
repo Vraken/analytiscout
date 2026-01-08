@@ -90,18 +90,18 @@ class AnalytiscoutAPI:
             "X-XSRF-TOKEN": self.session.cookies.get("XSRF-TOKEN"),
         }
 
+    """
+    Récupère les structures hiérarchiques
+
+    Args:
+        code_structure: Code numérique de la structure
+        nom_structure: Nom de la structure
+        id_saison: ID de la saison
+
+    Returns:
+        Données JSON ou None en cas d'erreur
+    """
     def get_structures_hierarchy(self, structure) -> Optional[Dict]:
-        """
-        Récupère les structures hiérarchiques
-
-        Args:
-            code_structure: Code numérique de la structure
-            nom_structure: Nom de la structure
-            id_saison: ID de la saison
-
-        Returns:
-            Données JSON ou None en cas d'erreur
-        """
         try:
             if not self._is_authenticated():
                 raise ValueError("Non authentifié")
@@ -123,35 +123,18 @@ class AnalytiscoutAPI:
         except Exception as e:
             raise Exception(f"Erreur lors de la récupération des structures: {str(e)}")
 
-    # def get_responsables(self, structure, isYoung):
-    #     """Récupère les responsables"""
-    #     youngOrResp =  'jeunes' if isYoung else 'responsables'
-    #     url = f"{self.base_url}/api/analytiscout/{youngOrResp}"
-    #
-    #     xsrf_token = self.session.cookies.get("XSRF-TOKEN")
-    #     headers = {
-    #         "Accept": "application/json, text/plain, */*",
-    #         "Content-Type": "application/json",
-    #         "X-XSRF-TOKEN": xsrf_token,
-    #         "Referer": f"{self.base_url}/pages/responsables",
-    #     }
-
-        response = self.session.post(url, json={"structures": [structure]}, headers=headers)
-        return response.json() if response.status_code == 200 else None
-
-
+    """
+    Récupère les responsables
+    
+    Args:
+        code_structure: Code numérique de la structure
+        nom_structure: Nom de la structure
+        id_saison: ID de la saison
+    
+    Returns:
+        Données JSON ou None en cas d'erreur
+    """
     def get_responsables(self, structure, isYoung) -> Optional[Dict]:
-        """
-        Récupère les responsables
-
-        Args:
-            code_structure: Code numérique de la structure
-            nom_structure: Nom de la structure
-            id_saison: ID de la saison
-
-        Returns:
-            Données JSON ou None en cas d'erreur
-        """
         youngOrResp =  'jeunes' if isYoung else 'responsables'
         url = f"{self.BASE_URL}/api/analytiscout/{youngOrResp}"
 

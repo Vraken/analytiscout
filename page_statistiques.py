@@ -56,6 +56,7 @@ def render_statistiques_page():
         handle_logout()
 
     if st.sidebar.button("🔄 Recharger tout", use_container_width=True):
+        st.cache_data.clear()
         clearAndReload(getUserFolder())
 
     # === OPTION POUR INCLURE LES PRÉINSCRITS ===
