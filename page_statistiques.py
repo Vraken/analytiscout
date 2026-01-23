@@ -182,17 +182,63 @@ def getUserFolder():
     return userFolder
 
 
+def verifier_quotas_camp_sgdf(nb_jeunes: int, nb_dir: int, nb_qual: int, nb_stag: int, nb_autres: int) -> Tuple[bool, str, dict]:
+    """
+    Vérifie la conformité selon le tableau SGDF.
+    Les directeurs sont ici considérés comme 'qualifiés' pour le calcul des quotas.
+    """
+    if nb_jeunes < 7:
+        return True, "", {}
+
+    # Définition des paliers [Total requis, Dir requis, Qualifiés requis]
+    paliers = {
+        (7, 12): {'total': 2, 'dir': 1, 'qual': 1},
+        (13, 24): {'total': 3, 'dir': 1, 'qual': 1},
+        (25, 36): {'total': 4, 'dir': 1, 'qual': 2},
+        (37, 48): {'total': 5, 'dir': 1, 'qual': 2},
+        (49, 60): {'total': 6, 'dir': 1, 'qual': 3},
+        (61, 72): {'total': 7, 'dir': 1, 'qual': 3},
+        (73, 84): {'total': 8, 'dir': 1, 'qual': 4},
+    }
+
+    config = next((v for (mini, maxi), v in paliers.items() if mini <= nb_jeunes <= maxi), None)
+
+    if not config:
+        return False, "Effectif hors tableau (>84)", {}
+
+    manquants = {}
+
+    # 1. Vérification du poste de Directeur (il en faut au moins un)
+    if nb_dir < config['dir']:
+        manquants['Directeur'] = config['dir'] - nb_dir
+
+    # 2. Vérification des Qualifiés (Le directeur est aussi qualifié)
+    # Somme de tous ceux qui ont un diplôme (Dir + Appro + Tech)
+    total_diplomes_disponibles = nb_dir + nb_qual
+    if total_diplomes_disponibles < config['qual']:
+        manquants['Qualifié (BAFA/Appro/Tech)'] = config['qual'] - total_diplomes_disponibles
+
+    # 3. Vérification du nombre total d'adultes
+    total_actuel = nb_dir + nb_qual + nb_stag + nb_autres
+    if total_actuel < config['total']:
+        diff_total = config['total'] - total_actuel
+        besoins_fixes = sum(manquants.values())
+        if diff_total > besoins_fixes:
+            manquants['Encadrant supplémentaire'] = diff_total - besoins_fixes
+
+    return len(manquants) == 0, "" if not manquants else "Manque d'encadrement", manquants
+details_alertes_camp = {}
+
+
 def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
                            df_chefs_filtered: pd.DataFrame, inclure_preinscrits: bool):
-    """Affiche le contenu complet d'une branche"""
+    """Affiche le contenu complet d'une branche avec détails des manques pour le camp"""
 
-    # Filtrer les données pour cette branche
+    # --- 1. Préparation des données ---
     df_branche = df_functions_filtered[df_functions_filtered['Branche'] == branche].copy()
-
     df_branche['Nom Structure'] = df_branche['Nom Structure'].str.strip()
 
     df_chefs_branche = df_chefs_filtered[df_chefs_filtered['Branche'] == branche].copy()
-
     if not df_chefs_branche.empty:
         df_chefs_branche['Nom Structure'] = df_chefs_branche['Nom Structure'].str.strip()
 
@@ -200,10 +246,9 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
         st.info(f"Aucune donnée disponible pour la branche {branche}")
         return
 
-    # === TABLEAU DES FONCTIONS ===
+    # --- 2. Construction du tableau pivot des effectifs ---
     st.markdown("### 📋 Effectifs par groupe")
 
-    # Créer un dictionnaire pour stocker les données formatées par fonction
     data_formatted_fonctions = {}
     totaux_par_structure = {}
 
@@ -217,74 +262,95 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
             data_formatted_fonctions[nom_structure] = {}
             totaux_par_structure[nom_structure] = 0
 
-        if inclure_preinscrits:
-            total = adherent + preinscrit
-            data_formatted_fonctions[nom_structure][fonction] = str(total)
-            totaux_par_structure[nom_structure] += total
-        else:
-            data_formatted_fonctions[nom_structure][fonction] = str(adherent)
-            totaux_par_structure[nom_structure] += adherent
+        total = (adherent + preinscrit) if inclure_preinscrits else adherent
+        data_formatted_fonctions[nom_structure][fonction] = str(total)
+        totaux_par_structure[nom_structure] += total
 
-    # Convertir en DataFrame
+    # DataFrame pivot
     df_pivot_branche = pd.DataFrame.from_dict(data_formatted_fonctions, orient='index').fillna("0")
 
-    # Ajouter les colonnes de diplômes
-    diplomes_par_structure = df_branche.groupby('Nom Structure')[
-        ['Directeur', 'Appro', 'Tech', 'APF', 'Sans diplôme']].sum()
+    # *** CORRECTION : Calcul des diplômes depuis df_chefs_branche ***
+    if not df_chefs_branche.empty:
+        diplomes_counts = {}
+        for nom_structure in df_pivot_branche.index:
+            df_structure_chefs = df_chefs_branche[df_chefs_branche['Nom Structure'] == nom_structure]
 
-    # Combiner les DataFrames
-    df_final = pd.concat([df_pivot_branche, diplomes_par_structure], axis=1)
+            diplomes_counts[nom_structure] = {
+                'Directeur (Qualifié)': len(df_structure_chefs[df_structure_chefs['Diplôme JS'] == 'Directeur']),
+                'Appro (Qualifié)': len(df_structure_chefs[df_structure_chefs['Diplôme JS'] == 'Appro']),
+                'Tech (Qualifié)': len(df_structure_chefs[df_structure_chefs['Diplôme JS'] == 'Tech']),
+                'APF (Stagiaire)': len(df_structure_chefs[df_structure_chefs['Diplôme JS'] == 'APF']),
+                'Sans diplôme (Non qualifié)': len(df_structure_chefs[df_structure_chefs['Diplôme JS'] == '-'])
+            }
 
+        df_diplomes = pd.DataFrame.from_dict(diplomes_counts, orient='index')
+    else:
+        # Si pas de responsables, créer un DataFrame vide avec les bonnes colonnes
+        df_diplomes = pd.DataFrame(
+            0,
+            index=df_pivot_branche.index,
+            columns=['Directeur (Qualifié)', 'Appro (Qualifié)', 'Tech (Qualifié)',
+                     'APF (Stagiaire)', 'Sans diplôme (Non qualifié)']
+        )
+
+    # Fusion finale pour affichage
+    df_final = pd.concat([df_pivot_branche, df_diplomes], axis=1)
     df_final['TOTAL'] = df_final.index.map(totaux_par_structure).fillna(0).astype(int).astype(str)
 
-    # Obtenir les colonnes de fonctions
     cols_fonctions = df_pivot_branche.columns.tolist()
 
-    # Appliquer le style avec mise en surbrillance et collecter les alertes
+    # --- 3. Stylage et calcul des manques ---
+    details_alertes_camp = {}
     all_alerts = set()
 
-    def apply_highlight_with_alerts(row):
-        styles, alerts = highlight_row(row, cols_fonctions)
-        all_alerts.update(alerts)
+    def apply_style_and_collect(row, cols_f, details_dict):
+        styles, alerts = highlight_row(row, cols_f, details_dict)
+        for a in alerts:
+            all_alerts.add(a)
         return styles
 
-    styled_df = df_final.style.apply(apply_highlight_with_alerts, axis=1)
+    # On applique le style en passant les arguments requis
+    styled_df = df_final.style.apply(
+        apply_style_and_collect,
+        axis=1,
+        args=(cols_fonctions, details_alertes_camp)
+    )
 
-    # Afficher le tableau
+    # Affichage du tableau principal
     st.dataframe(styled_df, use_container_width=True)
 
-    # Afficher les légendes uniquement pour les alertes présentes
+    # --- 4. Affichage des alertes et détails des manques ---
     if all_alerts:
-        st.markdown("**Alertes détectées :**")
-        if 'ratio_chefs' in all_alerts:
-            st.markdown("🟥 <span style='background-color: #ffcccc; padding: 2px 8px;'>Rouge clair</span> : Moins de 1 chef/cheftaine pour 12 jeunes", unsafe_allow_html=True)
-        if 'ratio_farfadet' in all_alerts:
-            st.markdown("🟥 <span style='background-color: #ffcccc; padding: 2px 8px;'>Rouge clair</span> : Moins de 1 responsable farfadet pour 12 jeunes", unsafe_allow_html=True)
-        if 'ratio_compagnon' in all_alerts:
-            st.markdown("🟥 <span style='background-color: #ffcccc; padding: 2px 8px;'>Rouge clair</span> : Moins de 1 accompagnateur compagnon pour 8 jeunes", unsafe_allow_html=True)
+        st.markdown("### ⚠️ Alertes de vigilance")
+
+        if 'quota_camp_insuffisant' in all_alerts:
+            with st.expander("🚨 **Alerte Camp :** L'encadrement actuel est insuffisant pour valider un départ en camp.", expanded=True):
+                if details_alertes_camp:
+                    for structure, besoins in details_alertes_camp.items():
+                        txt_besoins = ", ".join([f"{n} {k}" for k, n in besoins.items()])
+                        st.write(f"• **{structure}** : Manque {txt_besoins}")
+                else:
+                    st.info("Analysez les colonnes de diplômes pour identifier les manques.")
+
         if 'plus_35_jeunes' in all_alerts:
-            st.markdown("🟧 <span style='background-color: #ffe6cc; padding: 2px 8px;'>Orange clair</span> : Plus de 35 jeunes", unsafe_allow_html=True)
-        if 'aucun_directeur' in all_alerts:
-            st.markdown("🟨 <span style='background-color: #ffffcc; padding: 2px 8px;'>Jaune clair</span> : Aucun directeur", unsafe_allow_html=True)
+            st.warning("**🔸 Taille du groupe :** Plus de 35 jeunes. Envisagez une scission d'unité ou un renfort.")
 
     st.markdown("---")
 
-    # === LISTE DES RESPONSABLES ===
+    # --- 5. Liste des Responsables ---
     st.markdown("### 👨‍💼 Liste des Responsables")
 
     if not df_chefs_branche.empty:
         df_chefs_display = df_chefs_branche[['Nom Structure', 'Nom Groupe', 'Fonction', 'Prénom', 'Diplôme JS', 'Statut']].copy()
-
         styled_chefs = df_chefs_display.style.apply(highlight_chef_sans_diplome, axis=1)
         st.dataframe(styled_chefs, use_container_width=True, hide_index=True)
 
-        nb_sans_diplome = len(df_chefs_branche[df_chefs_branche['Diplôme JS'] == '-'])
-        if nb_sans_diplome > 0:
+        if len(df_chefs_branche[df_chefs_branche['Diplôme JS'] == '-']) > 0:
             st.markdown("🟥 <span style='background-color: #ffcccc; padding: 2px 8px;'>Rouge clair</span> : Responsable sans diplôme", unsafe_allow_html=True)
 
         st.markdown("---")
 
-        # === RÉPARTITION DES FORMATIONS ===
+        # --- 6. Niveaux de formation (Tableau coloré) ---
         st.markdown("### 📊 Répartition des formations par structure")
 
         structures_diplomes = []
@@ -372,7 +438,6 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
     else:
         st.info(f"Aucun responsable trouvé pour la branche {branche}.")
 
-
 def render_global_stats(df_functions_filtered: pd.DataFrame, df_chefs_filtered: pd.DataFrame, inclure_preinscrits: bool):
     """Affiche les statistiques globales toutes branches confondues"""
 
@@ -417,117 +482,69 @@ def render_global_stats(df_functions_filtered: pd.DataFrame, df_chefs_filtered: 
 
 
 # === FONCTIONS DE MISE EN FORME ===
-
-def highlight_row(row, cols_fonctions) -> Tuple[List[str], List[str]]:
+def highlight_row(row, cols_fonctions, details_alertes_camp):
     """
-    Fonction pour mettre en surbrillance les lignes selon les critères.
-    Retourne (styles, alerts) où alerts est une liste des alertes déclenchées.
+    Applique le style aux lignes et calcule les besoins manquants pour le camp.
+    Prend en compte que les Directeurs remplissent aussi le quota de 'Qualifiés'.
     """
     styles = [''] * len(row)
     alerts = []
 
-    # Déterminer le type de structure en fonction des colonnes présentes
-    has_farfadet = 'FARFADET' in cols_fonctions
-    has_compagnon = 'COMPAGNON' in cols_fonctions
-    has_regular_jeunes = any(func in cols_fonctions for func in ['SCOUT/MOUSSE', 'PIONNIER/MARIN', 'LOUVETEAU/MOUSSAILLON'])
+    try:
+        # 1. Extraction des effectifs jeunes (ajustez les noms selon vos données exactes)
+        # On cible toutes les fonctions qui correspondent à des 'mineurs'
+        FONCTIONS_JEUNES = [
+            'SCOUT/MOUSSE', 'PIONNIER/MARIN', 'LOUVETEAU/MOUSSAILLON',
+            'JEANNETTE', 'GUIDE', 'CARAVELLE'
+        ]
 
-    # Calculer le nombre de jeunes et de chefs selon le type de structure
-    nb_jeunes = 0
-    nb_chefs = 0
-    ratio_requis = 12  # Par défaut
-    alert_type = 'ratio_chefs'  # Par défaut
-
-    if has_farfadet:
-        # Structure Farfadet
-        if 'FARFADET' in cols_fonctions:
+        nb_jeunes = 0
+        for f in FONCTIONS_JEUNES:
+            val = row.get(f, 0)
+            # Conversion sécurisée en entier
             try:
-                val = str(row['FARFADET'])
-                nb_jeunes = int(val) if val.isdigit() else 0
-            except:
-                pass
+                nb_jeunes += int(float(val))
+            except (ValueError, TypeError):
+                continue
 
-        # Compter les responsables farfadet (Chef/Cheftaine pour les farfadets)
-        if 'RESPONSABLE FARFADET' in cols_fonctions:
-            try:
-                val = str(row['RESPONSABLE FARFADET'])
-                nb_chefs = int(val) if val.isdigit() else 0
-            except:
-                pass
-        ratio_requis = 12
-        alert_type = 'ratio_farfadet'
+        # Si moins de 7 jeunes, la règle du tableau SGDF ne s'applique pas (micro-camps)
+        if nb_jeunes < 7:
+            return styles, alerts
 
-    elif has_compagnon:
-        # Structure Compagnon
-        if 'COMPAGNON' in cols_fonctions:
-            try:
-                val = str(row['COMPAGNON'])
-                nb_jeunes = int(val) if val.isdigit() else 0
-            except:
-                pass
+        # 2. Extraction des diplômes depuis les colonnes du DataFrame pivot
+        # 'nb_dir' : compte pour la colonne 'Directeur'
+        # 'nb_qual' : compte pour la colonne 'Qualifié' (somme de Appro et Tech)
+        nb_dir = int(float(row.get('Directeur (Qualifié)', 0)))
+        nb_qual = int(float(row.get('Appro (Qualifié)', 0))) + int(float(row.get('Tech (Qualifié)', 0)))
+        nb_stag = int(float(row.get('APF (Stagiaire)', 0)))
+        nb_autres = int(float(row.get('Sans diplôme (Non qualifié)', 0)))
 
-        # Compter les accompagnateurs compagnons (Chef/Cheftaine pour les compagnons)
-        if 'ACCOMPAGNATEUR COMPAGNON' in cols_fonctions:
-            try:
-                val = str(row['ACCOMPAGNATEUR COMPAGNON'])
-                nb_chefs = int(val) if val.isdigit() else 0
-            except:
-                pass
-        ratio_requis = 8
-        alert_type = 'ratio_compagnon'
+        # 3. Vérification via la fonction des quotas (avec la nouvelle logique cumulative)
+        camp_ok, msg_erreur, manquants = verifier_quotas_camp_sgdf(
+            nb_jeunes, nb_dir, nb_qual, nb_stag, nb_autres
+        )
 
-    else:
-        # Structure classique (Louveteaux, Scouts, Pionniers)
-        fonctions_jeunes = ['SCOUT/MOUSSE', 'PIONNIER/MARIN', 'LOUVETEAU/MOUSSAILLON']
-        for func in fonctions_jeunes:
-            if func in cols_fonctions:
-                try:
-                    val = str(row[func])
-                    nb_jeunes += int(val) if val.isdigit() else 0
-                except:
-                    pass
+        # 4. Application des styles visuels
+        # Cas : Alerte Rouge (Manque d'encadrement critique)
+        if not camp_ok:
+            # Fond rouge, texte blanc pour une visibilité maximale
+            color = 'background-color: #ffe6cc; color: black;'
+            styles = [color] * len(row)
+            alerts.append('quota_camp_insuffisant')
+            # On stocke les détails pour l'affichage des expanders sous le tableau
+            details_alertes_camp[row.name] = manquants
 
-        # Calculer le nombre de chefs
-        if 'Chef/Cheftaine' in cols_fonctions:
-            try:
-                val = str(row['Chef/Cheftaine'])
-                nb_chefs = int(val) if val.isdigit() else 0
-            except:
-                pass
-        ratio_requis = 12
-        alert_type = 'ratio_chefs'
+        # Cas : Alerte Orange (Taille d'unité importante, conseil de scission)
+        elif nb_jeunes > 35:
+            color = 'background-color: #ffe6cc; color: black;'
+            styles = [color] * len(row)
+            alerts.append('plus_35_jeunes')
 
-    # Vérifier les diplômes
-    nb_directeurs = 0
-
-    if 'Directeur' in row.index:
-        try:
-            nb_directeurs = int(row['Directeur'])
-        except:
-            pass
-
-    # Déterminer la couleur et les alertes
-    color = None
-
-    # Priorité 1 : Ratio chef/jeunes insuffisant
-    if nb_jeunes > 0 and nb_chefs < (nb_jeunes / ratio_requis):
-        color = 'background-color: #ffcccc'
-        alerts.append(alert_type)
-
-    # Priorité 2 : Plus de 35 jeunes
-    if nb_jeunes > 35:
-        color = 'background-color: #ffe6cc'
-        alerts.append('plus_35_jeunes')
-
-    # Priorité 3 : Aucun directeur
-    if nb_chefs > 0 and nb_directeurs == 0:
-        color = 'background-color: #ffffcc'
-        alerts.append('aucun_directeur')
-
-    if color:
-        styles = [color] * len(row)
+    except Exception as e:
+        # En cas d'erreur imprévue, on ne bloque pas l'affichage Streamlit
+        return [''] * len(row), []
 
     return styles, alerts
-
 
 def highlight_chef_sans_diplome(row):
     """
