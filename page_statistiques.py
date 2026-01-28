@@ -4,6 +4,7 @@ Page des statistiques - Interface utilisateur
 
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from typing import List, Set, Tuple
 from data_service import (
     load_data,
@@ -351,92 +352,65 @@ def render_branche_content(branche: str, df_functions_filtered: pd.DataFrame,
         st.markdown("---")
 
         # --- 6. Niveaux de formation (Tableau coloré) ---
-        st.markdown("### 📊 Répartition des formations par structure")
+        # --- 6. Répartition des formations (Camembert) ---
+        st.markdown("### 📊 Répartition des formations par diplôme")
 
-        structures_diplomes = []
+        # Calculer les totaux globaux pour tous les diplômes de la branche
+        total_directeur = df_chefs_branche[df_chefs_branche['Diplôme JS'] == 'Directeur'].shape[0]
+        total_appro = df_chefs_branche[df_chefs_branche['Diplôme JS'] == 'Appro'].shape[0]
+        total_tech = df_chefs_branche[df_chefs_branche['Diplôme JS'] == 'Tech'].shape[0]
+        total_apf = df_chefs_branche[df_chefs_branche['Diplôme JS'] == 'APF'].shape[0]
+        total_sans_diplome = df_chefs_branche[df_chefs_branche['Diplôme JS'] == '-'].shape[0]
 
-        for nom_structure in df_chefs_branche['Nom Structure'].unique():
-            df_structure = df_chefs_branche[df_chefs_branche['Nom Structure'] == nom_structure]
-            total = len(df_structure)
+        # Préparer les données pour le camembert
+        labels = []
+        values = []
+        colors = []
 
-            directeur = len(df_structure[df_structure['Diplôme JS'] == 'Directeur'])
-            appro = len(df_structure[df_structure['Diplôme JS'] == 'Appro'])
-            tech = len(df_structure[df_structure['Diplôme JS'] == 'Tech'])
-            apf = len(df_structure[df_structure['Diplôme JS'] == 'APF'])
-            sans_diplome = len(df_structure[df_structure['Diplôme JS'] == '-'])
+        diplomes_data = [
+            ('Directeur', total_directeur, '#2ecc71'),  # Vert
+            ('Appro', total_appro, '#3498db'),  # Bleu
+            ('Tech', total_tech, '#9b59b6'),  # Violet
+            ('APF', total_apf, '#f39c12'),  # Orange
+            ('Sans diplôme', total_sans_diplome, '#e74c3c')  # Rouge
+        ]
 
-            structures_diplomes.append({
-                'Structure': nom_structure,
-                'Total': total,
-                'Directeur (%)': f"{(directeur / total * 100):.1f}%" if total > 0 else "0%",
-                'Appro (%)': f"{(appro / total * 100):.1f}%" if total > 0 else "0%",
-                'Tech (%)': f"{(tech / total * 100):.1f}%" if total > 0 else "0%",
-                'APF (%)': f"{(apf / total * 100):.1f}%" if total > 0 else "0%",
-                'Sans diplôme (%)': f"{(sans_diplome / total * 100):.1f}%" if total > 0 else "0%",
-                'Directeur': directeur,
-                'Appro': appro,
-                'Tech': tech,
-                'APF': apf,
-                'Sans diplôme': sans_diplome
-            })
+        for label, value, color in diplomes_data:
+            if value > 0:  # N'afficher que les catégories avec au moins 1 personne
+                labels.append(label)
+                values.append(value)
+                colors.append(color)
 
-        df_structures_diplomes = pd.DataFrame(structures_diplomes)
+        if values:
+            # Créer le camembert avec plotly
+            import plotly.graph_objects as go
 
-        # Calculer le niveau de formation
-        for idx, row in df_structures_diplomes.iterrows():
-            directeur = row['Directeur']
-            appro = row['Appro']
-            tech = row['Tech']
-            sans_diplome = row['Sans diplôme']
-            total = row['Total']
+            fig = go.Figure(data=[go.Pie(
+                labels=labels,
+                values=values,
+                marker=dict(colors=colors),
+                textinfo='label+percent+value',
+                texttemplate='%{label}<br>%{value} (%{percent})',
+                hovertemplate='<b>%{label}</b><br>Nombre: %{value}<br>Pourcentage: %{percent}<extra></extra>'
+            )])
 
-            pct_diplomes = ((directeur + appro + tech) / total * 100) if total > 0 else 0
-            pct_sans_diplome = (sans_diplome / total * 100) if total > 0 else 0
+            fig.update_layout(
+                showlegend=True,
+                height=500,
+                margin=dict(t=30, b=30, l=30, r=30)
+            )
 
-            if pct_diplomes >= 70:
-                niveau = '🟩 Excellent'
-            elif pct_sans_diplome > 55:
-                niveau = '🟥 Insuffisant'
-            elif pct_diplomes < 40:
-                niveau = '🟧 À améliorer'
-            else:
-                niveau = '🟨 Acceptable'
+            st.plotly_chart(fig, use_container_width=True, key=f"pie_chart_{branche}")
 
-            df_structures_diplomes.at[idx, 'Niveau'] = niveau
+            # Afficher un résumé textuel
+            total_responsables = sum(values)
+            total_diplomes = sum(v for l, v in zip(labels, values) if l in ['Directeur', 'Appro', 'Tech'])
+            pct_diplomes = (total_diplomes / total_responsables * 100) if total_responsables > 0 else 0
 
-        def color_row(row):
-            niveau = row['Niveau']
-            if '🟩' in str(niveau):
-                return ['background-color: #ccffcc'] * len(row)
-            elif '🟥' in str(niveau):
-                return ['background-color: #ffcccc'] * len(row)
-            elif '🟧' in str(niveau):
-                return ['background-color: #ffe6cc'] * len(row)
-            elif '🟨' in str(niveau):
-                return ['background-color: #ffffcc'] * len(row)
-            return [''] * len(row)
 
-        styled_structures = df_structures_diplomes[
-            ['Structure', 'Total', 'Niveau', 'Directeur (%)', 'Appro (%)', 'Tech (%)', 'APF (%)', 'Sans diplôme (%)']
-        ].style.apply(color_row, axis=1)
+        else:
+            st.info("Aucune donnée de formation disponible pour cette branche.")
 
-        st.dataframe(styled_structures, use_container_width=True, hide_index=True)
-
-        st.markdown("""
-        **📖 Légende des niveaux de formation :**
-
-        | Couleur | Niveau | Critères |
-        |---------|--------|----------|
-        | 🟩 <span style='background-color: #ccffcc; padding: 2px 8px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> | **Excellent** | ≥ 70% des responsables ont un diplôme (Tech, Appro ou Directeur) |
-        | 🟨 <span style='background-color: #ffffcc; padding: 2px 8px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> | **Acceptable** | Entre 40% et 70% de diplômés |
-        | 🟧 <span style='background-color: #ffe6cc; padding: 2px 8px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> | **À améliorer** | < 40% de diplômés |
-        | 🟥 <span style='background-color: #ffcccc; padding: 2px 8px; border-radius: 3px;'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> | **Insuffisant** | > 55% de responsables sans diplôme |
-
-        *Note : Les diplômes pris en compte sont Tech, Appro et Directeur (le diplôme APF n'est pas comptabilisé dans le calcul du niveau).*
-        """, unsafe_allow_html=True)
-
-    else:
-        st.info(f"Aucun responsable trouvé pour la branche {branche}.")
 
 def render_global_stats(df_functions_filtered: pd.DataFrame, df_chefs_filtered: pd.DataFrame, inclure_preinscrits: bool):
     """Affiche les statistiques globales toutes branches confondues"""
@@ -445,10 +419,27 @@ def render_global_stats(df_functions_filtered: pd.DataFrame, df_chefs_filtered: 
         st.info("Aucune donnée disponible")
         return
 
+    # Métriques globales en haut
+    if inclure_preinscrits:
+        total_adherents = int(df_functions_filtered['Nombre Total'].sum()) if not df_functions_filtered.empty else 0
+    else:
+        total_adherents = int(df_functions_filtered['Nombre Adherent'].sum()) if not df_functions_filtered.empty else 0
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric("Total Adhérents", total_adherents)
+    with col_m2:
+        st.metric("Total Responsables", len(df_chefs_filtered))
+
+    st.markdown("---")
+
+
+
+    # === TABLEAUX DE RÉSUMÉ ===
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.write("**Résumé par fonction**")
+        st.markdown("**📋 Résumé par fonction**")
         if inclure_preinscrits:
             fonction_summary = df_functions_filtered.groupby('Fonction')['Nombre Total'].sum().sort_values(ascending=False)
         else:
@@ -456,28 +447,111 @@ def render_global_stats(df_functions_filtered: pd.DataFrame, df_chefs_filtered: 
         st.dataframe(fonction_summary, use_container_width=True)
 
     with col2:
-        st.write("**Répartition des diplômes**")
+        st.markdown("**🎓 Répartition des diplômes**")
         if not df_chefs_filtered.empty:
             diplomes_count = df_chefs_filtered['Diplôme JS'].value_counts()
             st.dataframe(diplomes_count, use_container_width=True)
 
     with col3:
-        st.write("**Répartition des branches**")
+        st.markdown("**🌳 Répartition des branches**")
         if inclure_preinscrits:
             branche_summary = df_functions_filtered.groupby('Branche')['Nombre Total'].sum().sort_values(ascending=False)
         else:
             branche_summary = df_functions_filtered.groupby('Branche')['Nombre Adherent'].sum().sort_values(ascending=False)
         st.dataframe(branche_summary, use_container_width=True)
 
-    # Métriques globales
-    if inclure_preinscrits:
-        total_adherents = int(df_functions_filtered['Nombre Total'].sum()) if not df_functions_filtered.empty else 0
-    else:
-        total_adherents = int(df_functions_filtered['Nombre Adherent'].sum()) if not df_functions_filtered.empty else 0
+    st.markdown("---")
 
-    st.metric("Total Adhérents", total_adherents)
-    st.metric("Total Responsables", len(df_chefs_filtered))
 
+ # === CAMEMBERT DES FORMATIONS ===
+    st.markdown("### 📊 Répartition globale des formations (hors Compagnons)")
+
+    if not df_chefs_filtered.empty:
+        # Filtrer pour exclure les compagnons
+        df_chefs_sans_compagnons = df_chefs_filtered[
+            ~df_chefs_filtered['Branche'].str.strip().str.lower().isin(['compagnon', 'compagnons'])
+        ].copy()
+
+        if not df_chefs_sans_compagnons.empty:
+            # Calculer les totaux globaux pour tous les diplômes (sans compagnons)
+            total_directeur = df_chefs_sans_compagnons[df_chefs_sans_compagnons['Diplôme JS'] == 'Directeur'].shape[0]
+            total_appro = df_chefs_sans_compagnons[df_chefs_sans_compagnons['Diplôme JS'] == 'Appro'].shape[0]
+            total_tech = df_chefs_sans_compagnons[df_chefs_sans_compagnons['Diplôme JS'] == 'Tech'].shape[0]
+            total_apf = df_chefs_sans_compagnons[df_chefs_sans_compagnons['Diplôme JS'] == 'APF'].shape[0]
+            total_sans_diplome = df_chefs_sans_compagnons[df_chefs_sans_compagnons['Diplôme JS'] == '-'].shape[0]
+
+            # Préparer les données pour le camembert
+            labels = []
+            values = []
+            colors = []
+
+            diplomes_data = [
+                ('Directeur', total_directeur, '#2ecc71'),  # Vert
+                ('Appro', total_appro, '#3498db'),  # Bleu
+                ('Tech', total_tech, '#9b59b6'),  # Violet
+                ('APF', total_apf, '#f39c12'),  # Orange
+                ('Sans diplôme', total_sans_diplome, '#e74c3c')  # Rouge
+            ]
+
+            for label, value, color in diplomes_data:
+                if value > 0:  # N'afficher que les catégories avec au moins 1 personne
+                    labels.append(label)
+                    values.append(value)
+                    colors.append(color)
+
+            if values:
+                # Créer le camembert avec plotly
+                import plotly.graph_objects as go
+
+                fig = go.Figure(data=[go.Pie(
+                    labels=labels,
+                    values=values,
+                    marker=dict(colors=colors),
+                    textinfo='label+percent+value',
+                    texttemplate='%{label}<br>%{value} (%{percent})',
+                    hovertemplate='<b>%{label}</b><br>Nombre: %{value}<br>Pourcentage: %{percent}<extra></extra>'
+                )])
+
+                fig.update_layout(
+                    showlegend=True,
+                    height=500,
+                    margin=dict(t=30, b=30, l=30, r=30)
+                )
+
+                # Clé unique pour les stats globales
+                st.plotly_chart(fig, use_container_width=True, key="pie_chart_global")
+
+                # Afficher un résumé textuel
+                total_responsables = sum(values)
+                total_diplomes = sum(v for l, v in zip(labels, values) if l in ['Directeur', 'Appro', 'Tech'])
+                pct_diplomes = (total_diplomes / total_responsables * 100) if total_responsables > 0 else 0
+
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Total responsables (hors Compagnons)", total_responsables)
+                with col_b:
+                    st.metric("Diplômés (Dir/Appro/Tech)", f"{total_diplomes} ({pct_diplomes:.1f}%)")
+                # with col_c:
+                #     # Évaluation globale
+                #     if pct_diplomes >= 70:
+                #         st.success("🟩 Excellent niveau de formation")
+                #     elif pct_diplomes >= 40:
+                #         st.info("🟨 Niveau de formation acceptable")
+                #     else:
+                #         st.warning("🟧 Niveau de formation à améliorer")
+
+                st.markdown("""
+                    **📖 Légende :**
+                    - **Diplômés qualifiés** : Directeur, Appro, Tech
+                    - **Stagiaire** : APF (en cours de formation)
+                    - **Sans diplôme** : Nécessite une formation
+
+                    *Note : Les Compagnons sont exclus de ce graphique car ils ne sont pas soumis aux mêmes exigences de diplômes.*
+                    """)
+            else:
+                st.info("Aucune donnée de formation disponible.")
+        else:
+            st.info("Aucun responsable disponible (hors Compagnons).")
 
 
 
