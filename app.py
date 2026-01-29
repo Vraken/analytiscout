@@ -3,7 +3,7 @@ Application Analytiscout - Point d'entrée principal
 """
 
 import streamlit as st
-from page_login import render_login_page, show_login_info
+from page_login import render_login_page
 from page_statistiques import render_statistiques_page
 
 
@@ -36,7 +36,6 @@ def main():
         render_statistiques_page()
     else:
         render_login_page()
-        show_login_info()
 
 
 if __name__ == "__main__":

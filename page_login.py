@@ -78,25 +78,8 @@ def handle_login(username: str, password: str):
             st.error(f"❌ {message}")
 
 
-def show_login_info():
-    """Affiche des informations sur la page de connexion"""
-    st.markdown("---")
-
-    with st.expander("ℹ️ Informations"):
-        st.markdown("""
-        ### À propos
-
-        Cette application vous permet de vous connecter à **Analytiscout** et de récupérer :
-        - 📊 Les structures hiérarchiques
-        - 👥 Les responsables
-
-        ### Sécurité
-
-        Vos identifiants sont utilisés uniquement pour la connexion et ne sont pas sauvegardés.
-        """)
 
 
 # Point d'entrée de la page
 if __name__ == "__main__":
     render_login_page()
-    show_login_info()

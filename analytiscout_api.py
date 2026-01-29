@@ -15,6 +15,7 @@ class AnalytiscoutAPI:
     OAUTH_URL = f"{BASE_URL}/oauth2/authorization/oidc"
     STRUCTURES_URL = f"{BASE_URL}/api/analytiscout/structures/structuresHie/false"
     RESPONSABLES_URL = f"{BASE_URL}/api/analytiscout/responsables"
+    ACCOUNT_URL = f"{BASE_URL}/api/account"
 
     def __init__(self):
         self.session: Optional[requests.Session] = None
@@ -122,6 +123,35 @@ class AnalytiscoutAPI:
 
         except Exception as e:
             raise Exception(f"Erreur lors de la récupération des structures: {str(e)}")
+
+    def get_account_info(self) -> Optional[Dict]:
+        """
+        Récupère les informations du compte connecté
+
+        Returns:
+            Données JSON du compte ou None
+        """
+        try:
+            if not self._is_authenticated():
+                raise ValueError("Non authentifié")
+
+            response = self.session.get(
+                self.ACCOUNT_URL,
+                headers={
+                    "Accept": "application/json",
+                    "X-XSRF-TOKEN": self.session.cookies.get("XSRF-TOKEN")
+                },
+                timeout=10
+            )
+            print("acccount info {}",response.json())
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return None
+
+        except Exception as e:
+            raise Exception(f"Erreur lors de la récupération du compte: {str(e)}")
 
     """
     Récupère les responsables

@@ -437,11 +437,9 @@ def clearAndReload(userFolder):
 def fetch_responsables(userFolder):
     structureFile = f"{userFolder}/structure.json"
     api = st.session_state.api_instance
-    structure = {
-        "codeStructure": 119120000,
-        "nomStructure": "TERRITOIRE ESSONNE LEVANT",
-        "idSaison": 2026,
-    }
+    account_info = api.get_account_info()
+
+    structure = account_info['structuresFonctions'][0]
 
     if not os.path.exists(userFolder):
         os.mkdir(userFolder)
